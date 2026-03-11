@@ -1,0 +1,8 @@
+streamlit==1.32.2
+sentence-transformers==2.5.1
+scikit-learn==1.4.1.post1
+google-api-python-client==2.121.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.0
+PyPDF2==3.0.1
+python-docx==1.1.0
