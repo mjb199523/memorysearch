@@ -1,78 +1,38 @@
-# MemorySearch - Implementation Plan & Architecture
+# MemorySearch Pro - AI Memory Assistant
 
-MemorySearch is a lightweight, privacy-first AI tool designed to help users find documents and emails based on semantic intent instead of exact keywords. It processes data strictly in-memory during the query session and drops all context afterward.
+**MemorySearch Pro** is an expert-level AI systems tool designed to help users find documents or emails when they only remember the *context or topic* (e.g., "Find the document where we discussed API validation").
 
-## 1. System Architecture
+It ensures absolute privacy by utilizing a **zero-storage, temporary session-based pipeline**.
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Streamlit UI
-    participant SearchEngine
-    participant Embeddings (Local)
-    participant LocalFiles
-    participant GmailAPI
-    participant DriveAPI
+---
 
-    User->>Streamlit UI: "Find the document about API validation"
-    Streamlit UI->>SearchEngine: search(query, sources=[Local, Gmail, Drive])
-    
-    par Fetch Context
-        SearchEngine->>LocalFiles: Get recent files (PDF, DOCX) & extract text
-        SearchEngine->>GmailAPI: Get recent emails & subjects
-        SearchEngine->>DriveAPI: Get recent doc summaries
-    end
-    
-    LocalFiles-->>SearchEngine: Local texts
-    GmailAPI-->>SearchEngine: Email texts
-    DriveAPI-->>SearchEngine: Drive doc texts
-    
-    SearchEngine->>Embeddings (Local): Encode(query) + Encode(all_texts)
-    Embeddings (Local)-->>SearchEngine: Vectors
-    
-    SearchEngine->>SearchEngine: Compute Cosine Similarity & Rank Top N
-    SearchEngine-->>Streamlit UI: Formatted Results (Title, Source, Snippet)
-    
-    Streamlit UI-->>User: Display Results
-    
-    Note over SearchEngine: Session Ends (Data is Garbage Collected)
-```
+## 🏛️ System Architecture Workflow
 
-## 2. Implementation Plan
+1. **Query Input & Intent Expansion**: User submits a natural language query. An intent parser expands the query with associated synonyms (e.g., "resume" -> "resume, cv, biodata, profile").
+2. **Context-Aware API Fetching**: The expanded query is dynamically injected into Google Drive and Gmail APIs to selectively fetch relevant objects without scraping the entire account.
+3. **Deep Content Extraction**: The system parses deeply nested multipart email payloads, specifically downloading and converting attachments (PDF, DOCX, TXT, PPTX) completely in-memory using `io.BytesIO`.
+4. **Multi-Vector Semantic Similarity**: We utilize `sentence-transformers` to compute vector cosine similarities strictly in RAM. 
+5. **Weighted Priority Ranking**: Matches found inside Attachment Filenames or Attachment Contents hold the highest multiplicative score (+1.5x / +1.4x), ensuring attachments are strongly prioritized as requested. Email subjects, bodies, and standalone documents follow.
+6. **Data Destruction**: The moment the Streamlit UI finishes rendering the sorted HTML result payload, the array falls out of scope, safely discarding the user's data from system memory.
 
-### Phase 1: Core Setup & Embedding Engine
-- Set up a virtual environment and install dependencies (`streamlit`, `sentence-transformers`, `scikit-learn`).
-- Implement the `SemanticSearchEngine` class that uses a fast, lightweight local embedding model (e.g., `all-MiniLM-L6-v2` via HuggingFace's sentence-transformers).
-- Ensure the model is loaded into memory once and texts are processed in batches purely in memory.
+---
 
-### Phase 2: Source Integrations
-- **Local Files**: Implement a directory scanner that recursively finds `.txt`, `.pdf`, and `.docx` files. Extract a brief amount of text (first few pages or a summary) using `PyPDF2` and `python-docx`.
-- **Gmail API**: Set up Google OAuth 2.0. Use the Gmail API to fetch the latest N emails (metadata and snippet). 
-- **Google Drive API**: Use the Drive API to list recent files and their short descriptions or extract readable text bounds.
+## ⚙️ Implemented Logic & Features
+* **Priority Attachment Search**: Fully parses email attachments, converts internal PDF/DOCX/PPTX streams to text strings on the fly, and uses NLP encoding to verify if the attachment matches the user's intent.
+* **Deep Email Search Logic**: Extracts Gmail Payload Headers (`Subject`, `From`, `Date`), Base64 decoded `Text/HTML` bodies via BeautifulSoup, and nested `AttachmentIds`.
+* **Result Ranking**: The custom algorithm calculates discrete embedding scores for every sub-part of a document, taking the highest weighted factor (Attachment Name > Attachment Text > Email Subject > Document Text) as the final sort metric.
 
-### Phase 3: The Search Pipeline
-- When a user submits a query:
-  1. Concurrently fetch data from all enabled sources.
-  2. Map fetched items to a standard schema `{'id', 'title', 'source', 'text', 'metadata'}`.
-  3. Encode the fetched text.
-  4. Perform semantic similarity (e.g., using `cosine_similarity`).
-  5. Sort results and yield the top 5-10 matches.
+---
 
-### Phase 4: UI Development (Streamlit)
-- Create a clean, single-page UI.
-- Add toggle switches for filtering sources (Local, Gmail, Drive).
-- Add the search bar.
-- Display results elegantly with cards containing the Match Score, Source Badge, Title, and Snippet.
+## 🚀 Setup & API Integration
 
-### Phase 5: Privacy & Performance Hardening
-- Verify that no data is written to disk (everything in Python lists/dicts).
-- Restrict fetch counts (e.g., last 100 emails) to keep in-memory computation fast (< 2 seconds).
+1. **Python Environment**: Ensure you are using `python -m venv venv` and `venv/Scripts/activate`.
+2. **Dependency Installation**: `pip install -r requirements.txt` (Now includes `python-pptx` and `beautifulsoup4` for Pro version extraction).
+3. **Google API Configuration**: 
+   * Navigate to Google Cloud Console.
+   * Enable **Gmail API** and **Google Drive API** in the API library.
+   * Under **Data Access** / **OAuth Consent Screen**, configure `.../auth/gmail.readonly` and `.../auth/drive.readonly` scopes.
+   * Save the Desktop OAuth 2.0 Client credentials locally to this folder as `credentials.json`.
+4. **Execution**: `streamlit run app.py`
 
-## 3. Setup Instructions (for this starter code)
-1. Navigate to this directory: `cd "c:\Users\Manashjyoti Barman\Desktop\MemorySearch"`
-2. Create virtual env: `python -m venv venv`
-3. Activate it: `venv\Scripts\activate`
-4. Install reqs: `pip install -r requirements.txt`
-5. Run the app: `streamlit run app.py`
-
-*Note: For Gmail and Drive, you will need to create a project in the Google Cloud Console, enable the APIs, and retrieve `credentials.json`.*
+Enjoy your new personal AI Search Engine!
