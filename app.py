@@ -1,6 +1,19 @@
 import streamlit as st
 import os
+import json
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive
+
+# -- Handle Streamlit Cloud Secrets --
+try:
+    if "google_credentials" in st.secrets:
+        with open("credentials.json", "w") as f:
+            f.write(st.secrets["google_credentials"])
+    if "google_token" in st.secrets:
+        with open("token.json", "w") as f:
+            f.write(st.secrets["google_token"])
+except Exception:
+    pass
+
 
 # -- Page Config --
 st.set_page_config(
