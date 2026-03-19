@@ -261,8 +261,14 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            st.link_button("🔗 Connect Google Account", auth_url, use_container_width=True)
-            st.caption("Sign in securely in the next window - you'll be connected instantly.")
+            # Native button + JS Redirect to force same-tab navigation even in iframes
+            if st.button("🔗 Connect Google Account", use_container_width=True):
+                st.components.v1.html(f"""
+                    <script>
+                        window.top.location.href = "{auth_url}";
+                    </script>
+                """, height=0)
+            st.caption("This will securely sync your account in this tab.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
