@@ -79,35 +79,43 @@ def exchange_code_for_creds(code):
 
 def authenticate_google():
     """Handles the OAuth2 callback and stores credentials in session state."""
+    # 🧪 URGENT POPUP SYNC Logic: 
+    # Do this BEFORE anything else to close the window as fast as possible.
+    state = st.query_params.get("state")
+    code = st.query_params.get("code")
+
+    if code and state == "popup_flow":
+        st.markdown(f"""
+            <script>
+                if (window.opener) {{
+                    // Immediately try to sync with the parent window
+                    try {{
+                        window.opener.location.search = window.location.search.replace('state=popup_flow', 'state=sync_complete');
+                        window.close();
+                    }} catch (e) {{
+                        console.error("Popup sync failed", e);
+                    }}
+                }}
+            </script>
+            <div style="text-align: center; font-family: sans-serif; padding-top: 20px; color: #444;">
+                <h2 style="margin-bottom: 5px;">Auth Success!</h2>
+                <p>Syncing with your search tool...</p>
+                <div style="margin-top: 15px;">
+                    <button onclick="window.close()" style="padding: 10px 20px; border-radius: 5px; background: #007bff; color: white; border: none; cursor: pointer;">
+                        Click here if window doesn't close
+                    </button>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+        st.stop()
+        return None
+
     # 1. Check if we already have valid creds
     if "google_creds" in st.session_state and st.session_state.google_creds.valid:
         return st.session_state.google_creds
 
-    # 2. Check for authentication code and state in query params
-    code = st.query_params.get("code")
-    state = st.query_params.get("state")
-    
-    if code:
-        # 🧪 SYNC LOGIC:
-        # If we are the popup (state=popup_flow), sync with parent and close.
-        if state == "popup_flow":
-            st.markdown(f"""
-                <script>
-                    if (window.opener && window.opener !== window) {{
-                        // Pass the code back but change the state so the parent knows to exchange it
-                        window.opener.location.search = window.location.search.replace('state=popup_flow', 'state=sync_complete');
-                        window.close();
-                    }}
-                </script>
-                <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
-                    <h3>Syncing with MemorySearch...</h3>
-                    <p>This window will close automatically.</p>
-                </div>
-            """, unsafe_allow_html=True)
-            st.stop()
-            return None
-
-        # 3. Process the code if we are the parent window (state=sync_complete)
+    # 2. Process the code if we are the parent window (state=sync_complete)
+    if code and state == "sync_complete":
         creds = exchange_code_for_creds(code)
         if creds:
             st.session_state.google_creds = creds
