@@ -86,26 +86,34 @@ def authenticate_google():
 
     if code and state == "popup_flow":
         st.markdown(f"""
+            <div style="text-align: center; font-family: 'Inter', sans-serif; padding: 40px 20px; color: #1a1a1a;">
+                <h2 style="font-weight: 700; margin-bottom: 10px;">🔐 Auth Success!</h2>
+                <p style="color: #666; margin-bottom: 30px;">Syncing your account with MemorySearch...</p>
+                <button id="syncBtn" style="padding: 12px 24px; border-radius: 10px; background: #007bff; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,123,255,0.2);">
+                    Click to Finish Sync
+                </button>
+            </div>
             <script>
-                if (window.opener) {{
-                    // Immediately try to sync with the parent window
-                    try {{
-                        window.opener.location.search = window.location.search.replace('state=popup_flow', 'state=sync_complete');
-                        window.close();
-                    }} catch (e) {{
-                        console.error("Popup sync failed", e);
+                function doSync() {{
+                    if (window.opener) {{
+                        try {{
+                            window.opener.location.search = window.location.search.replace('state=popup_flow', 'state=sync_complete');
+                            window.close();
+                        }} catch (e) {{
+                            alert("Please manually refresh your original MemorySearch tab.");
+                            window.close();
+                        }}
+                    }} else {{
+                        alert("Close this window and refresh your main MemorySearch page.");
                     }}
                 }}
+                
+                // Try automatic sync immediately
+                setTimeout(doSync, 500);
+                
+                // Manual trigger
+                document.getElementById('syncBtn').onclick = doSync;
             </script>
-            <div style="text-align: center; font-family: sans-serif; padding-top: 20px; color: #444;">
-                <h2 style="margin-bottom: 5px;">Auth Success!</h2>
-                <p>Syncing with your search tool...</p>
-                <div style="margin-top: 15px;">
-                    <button onclick="window.close()" style="padding: 10px 20px; border-radius: 5px; background: #007bff; color: white; border: none; cursor: pointer;">
-                        Click here if window doesn't close
-                    </button>
-                </div>
-            </div>
         """, unsafe_allow_html=True)
         st.stop()
         return None
