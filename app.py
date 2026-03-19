@@ -10,11 +10,6 @@ if os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ:
 else:
     REDIRECT_URI = "http://localhost:8501"
 
-# Heavy imports go AFTER the sync check (Legacy)
-from google.oauth2.credentials import Credentials
-from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
-
-# -- Handle Streamlit Cloud Auth --
 # -- Detect Environment --
 is_cloud = os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ
 
@@ -269,21 +264,12 @@ with st.sidebar:
         # Fallback to local token ONLY when running locally
         st.success("✅ Connected (Local Session)")
     else:
-        st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            # Standard markdown links are the most reliable way to breakout of Streamlit Cloud iframes
-            # without triggering security blocks.
-            st.markdown(f"""
-                <div style="background: #007bff; padding: 18px; border-radius: 12px; border: 1px solid #0056b3; text-align: center;">
-                    <a href="{auth_url}" target="_top" style="color: white; text-decoration: none; font-weight: 700; font-size: 1.1rem;">
-                        🔗 CLICK HERE TO CONNECT
-                    </a>
-                </div>
-            """, unsafe_allow_html=True)
-            st.info("Follow the link above to securely sign in with Google.")
+            st.link_button("🔗 Connect Google Account", auth_url, type="primary", use_container_width=True)
+            st.caption("Sign in with Google to enable Gmail & Drive search.")
         else:
-            st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
+            st.error("⚠️ google_credentials missing.")
 
 # Search Form
 with st.form("search_form", clear_on_submit=False):
