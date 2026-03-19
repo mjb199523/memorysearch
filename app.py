@@ -191,11 +191,16 @@ with st.sidebar:
                             if has_refresh:
                                 st.info("🔄 Session Hibernating. It will auto-refresh when you search.")
                                 if st.button("Reconnect Google APIs NOW", use_container_width=True):
-                                    from core_search import get_google_credentials
-                                    if get_google_credentials():
-                                        st.rerun()
+                                    with st.spinner("Refreshing session..."):
+                                        from core_search import get_google_credentials
+                                        creds = get_google_credentials()
+                                        if creds:
+                                            st.success("Session Refreshed!")
+                                            st.rerun()
+                                        else:
+                                            st.error("⚠️ Connection Failed. Your Cloud secrets might be outdated.")
                             else:
-                                st.warning("⚠️ Access Revoked. Re-authentication required.")
+                                st.warning("⚠️ Access Revoked. Manual re-auth required.")
                         else:
                             st.success("✅ Google APIs Connected (Active)")
                     else:
