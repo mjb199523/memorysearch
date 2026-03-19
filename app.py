@@ -84,42 +84,59 @@ def authenticate_google():
     state = st.query_params.get("state")
     code = st.query_params.get("code")
 
+    # --- Parent Window Handoff Listener ---
+    # This small script sits in the main app and waits for the popup to say "I'm done!"
+    st.markdown("""
+        <script>
+            if (!window.authListenerSet) {
+                window.addEventListener('message', function(e) {
+                    if (e.data && e.data.type === 'google_auth_sync') {
+                        window.location.search = e.data.search;
+                    }
+                }, false);
+                window.authListenerSet = true;
+            }
+        </script>
+    """, unsafe_allow_html=True)
+
     if code and state == "popup_flow":
-        # We use a dedicated HTML component because st.markdown often strips <script> tags on the cloud for security.
-        # This isolated component can communicate back to the parent window via window.top.opener.
+        # The Popup Screen with a premium loader
         sync_html = f"""
-            <div style="text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding-top: 40px;">
-                <h2 style="font-weight: 700; color: #1a1a1a;">🔐 Auth Success!</h2>
-                <p style="color: #666; margin-bottom: 25px;">Syncing your account with MemorySearch...</p>
-                <button id="finishBtn" style="padding: 12px 24px; border-radius: 10px; background: #007bff; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,123,255,0.2);">
-                    Finish Sync & Close
-                </button>
-            </div>
+            <style>
+                .loader {{
+                    border: 4px solid #f3f3f3;
+                    border-top: 4px solid #007bff;
+                    border-radius: 50%;
+                    width: 40px;
+                    height: 40px;
+                    animation: spin 1s linear infinite;
+                    margin: 20px auto;
+                }}
+                @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+                body {{ font-family: -apple-system, system-ui, sans-serif; text-align: center; padding-top: 50px; background: #fff; }}
+            </style>
+            <div class="loader"></div>
+            <h2 style="font-weight: 700; color: #1a1a1a;">Authenticating...</h2>
+            <p style="color: #666;">Completing the secure handoff...</p>
+            
             <script>
-                function doSync() {{
-                    const parent = window.top.opener;
-                    if (parent) {{
-                        try {{
-                            // Sync the code to the parent and close
-                            parent.location.search = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
-                            window.top.close();
-                        }} catch (e) {{
-                            console.error(e);
-                            alert("Handoff failed. Please refresh your main MemorySearch tab manually.");
-                        }}
+                function finishAuth() {{
+                    const parentWindow = window.top.opener;
+                    if (parentWindow) {{
+                        const newSearch = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
+                        // Use postMessage to bypass Cross-Origin restrictions in Streamlit iframes
+                        parentWindow.postMessage({{ type: 'google_auth_sync', search: newSearch }}, "*");
+                        setTimeout(() => {{ window.top.close(); }}, 500);
                     }} else {{
-                        alert("Parent window not found. Please refresh your main page manually.");
+                        // Fallback if opener is lost
+                        window.top.location.search = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
                     }}
                 }}
-                
-                // Set up the manual button
-                document.getElementById('finishBtn').onclick = doSync;
-                
-                // Try auto-sync in 1 second
-                setTimeout(doSync, 1000);
+                // Execute immediately
+                finishAuth();
             </script>
         """
-        st.components.v1.html(sync_html, height=300)
+        st.components.v1.html(sync_html, height=400)
         st.stop()
         return None
 
