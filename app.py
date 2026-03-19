@@ -45,6 +45,7 @@ def get_auth_url():
         "scope": " ".join(SCOPES),
         "access_type": "offline",
         "prompt": "consent",
+        "state": "popup_flow"
     }
     return "https://accounts.google.com/o/oauth2/auth?" + urllib.parse.urlencode(params)
 
@@ -78,14 +79,39 @@ def exchange_code_for_creds(code):
 
 def authenticate_google():
     """Handles the OAuth2 callback and stores credentials in session state."""
-    if "google_creds" in st.session_state:
+    # 1. Check if we already have valid creds
+    if "google_creds" in st.session_state and st.session_state.google_creds.valid:
         return st.session_state.google_creds
 
-    # Google redirects back here with a ?code= parameter
-    if "code" in st.query_params:
-        creds = exchange_code_for_creds(st.query_params["code"])
+    # 2. Check for authentication code and state in query params
+    code = st.query_params.get("code")
+    state = st.query_params.get("state")
+    
+    if code:
+        # 🧪 SYNC LOGIC:
+        # If we are the popup (state=popup_flow), sync with parent and close.
+        if state == "popup_flow":
+            st.markdown(f"""
+                <script>
+                    if (window.opener && window.opener !== window) {{
+                        // Pass the code back but change the state so the parent knows to exchange it
+                        window.opener.location.search = window.location.search.replace('state=popup_flow', 'state=sync_complete');
+                        window.close();
+                    }}
+                </script>
+                <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
+                    <h3>Syncing with MemorySearch...</h3>
+                    <p>This window will close automatically.</p>
+                </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+            return None
+
+        # 3. Process the code if we are the parent window (state=sync_complete)
+        creds = exchange_code_for_creds(code)
         if creds:
             st.session_state.google_creds = creds
+            # Clear query params to clean the URL
             st.query_params.clear()
             st.rerun()
 
@@ -268,8 +294,16 @@ with st.sidebar:
         st.info("Personalize your search by connecting your Google account.")
         auth_url = get_auth_url()
         if auth_url:
-            st.link_button("🔗 Connect Google Account", auth_url, use_container_width=True)
-            st.caption("You will be redirected to Google to authorize access.")
+            # Native Streamlit link_button opens a new tab. 
+            # To open a popup, we use a custom component.
+            button_html = f"""
+                <button onclick="child_window = window.open('{auth_url}', 'auth_window', 'width=500,height=600,left=100,top=100');" 
+                        style="width: 100%; border-radius: 8px; background-color: #007bff; color: white; padding: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600;">
+                    🔗 Connect Google Account
+                </button>
+            """
+            st.components.v1.html(button_html, height=50)
+            st.caption("A popup window will open for authorization.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
