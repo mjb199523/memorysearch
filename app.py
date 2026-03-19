@@ -4,59 +4,20 @@ import json
 import urllib.parse
 import requests as req_lib
 
-REDIRECT_URI = "https://memorysearch.streamlit.app"
+# 🌍 Use production URL on Cloud, localhost on dev
+if os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ:
+    REDIRECT_URI = "https://memorysearch.streamlit.app"
+else:
+    REDIRECT_URI = "http://localhost:8501"
 
-# 🧪 FAST POPUP SYNC (DO NOT REMOVE):
-# This must be at the very top to ensure the popup closes before the heavy AI models load.
-if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
-    new_search = f"?code={st.query_params['code']}&state=sync_complete"
-    st.components.v1.html(f"""
-        <div style="text-align: center; font-family: sans-serif; padding: 20px; border: 2px solid #007bff; border-radius: 12px; height: 100vh; background: #fff;">
-            <h1 style="color: #007bff; margin-bottom: 5px; font-weight: 800;">✅ Linked!</h1>
-            <p style="color: #666; font-size: 1.1rem; margin-bottom: 25px;">Finalizing connection...</p>
-            <button id="finalBtn" style="padding: 15px 30px; background: #007bff; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-top: 10px;">
-                FINISH SYNC
-            </button>
-        </div>
-        <script>
-            function doFinish() {{
-                const win = window.top;
-                try {{
-                    if (win.opener) {{
-                        win.opener.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
-                    }}
-                }} catch(e) {{ }}
-                setTimeout(() => {{ win.close(); }}, 300);
-            }}
-            // Try auto-finish first
-            setTimeout(doFinish, 600);
-            // Manual click if auto-close is blocked
-            document.getElementById('finalBtn').onclick = doFinish;
-        </script>
-    """, height=500)
-    st.stop()
-
-# --- Parent Window Handoff Listener ---
-# This is REQUIRED to receive the signal from the popup.
-st.markdown("""
-<script>
-    if (!window.authListenerSet) {
-        window.addEventListener('message', function(e) {
-            if (e.data && e.data.type === 'google_auth_sync') {
-                window.location.search = e.data.search;
-            }
-        }, false);
-        window.authListenerSet = true;
-    }
-</script>
-""", unsafe_allow_html=True)
-
-# Heavy imports go AFTER the sync check
+# Heavy imports go AFTER the sync check (Legacy)
 from google.oauth2.credentials import Credentials
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
 
 # -- Handle Streamlit Cloud Auth --
+# -- Detect Environment --
 is_cloud = os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ
+
 if is_cloud and os.path.exists("token.json"):
     try: os.remove("token.json")
     except: pass
@@ -97,7 +58,7 @@ def exchange_code_for_creds(code):
         "client_secret": web["client_secret"],
         "redirect_uri": REDIRECT_URI,
         "grant_type": "authorization_code",
-    })
+    }, timeout=10)
     if resp.status_code == 200:
         token = resp.json()
         return Credentials(
@@ -118,13 +79,16 @@ def authenticate_google():
         # Show a quick loading state while we exchange the code
         with st.status("🔐 Connecting to your Google account...", expanded=False) as status:
             creds = exchange_code_for_creds(code)
+            # Clear params immediately so they don't persist on failure
+            st.query_params.clear()
+            
             if creds:
                 st.session_state.google_creds = creds
                 status.update(label="✅ Connected!", state="complete")
-                st.query_params.clear()
                 st.rerun()
             else:
-                status.update(label="❌ Connection failed. Please try again.", state="error")
+                status.update(label="❌ Connection failed. Check your credentials or try again.", state="error")
+                # No rerun here, let the user see the error message in the status box
     
     # 2. Check session state for existing creds
     if "google_creds" in st.session_state and st.session_state.google_creds.valid:
@@ -294,8 +258,7 @@ with st.sidebar:
     st.subheader("🔑 Google Connection")
     
     # Check session-based credentials first
-    # Improved cloud detection: Streamlit Cloud sets STREAMLIT_SERVER_ADDRESS and has /home/appuser
-    is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None or os.path.exists("/home/appuser")
+    # is_cloud is already defined at the top level
     
     if "google_creds" in st.session_state and st.session_state.google_creds.valid:
         st.success("✅ Connected to your Google Account")
@@ -309,8 +272,23 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            st.link_button("🔗 Connect Google Account", auth_url, use_container_width=True)
-            st.caption("Sign in in the new window. It will connect instantly.")
+            # Same-tab redirect is the only 100% reliable way on Streamlit Cloud
+            # to bypass cross-origin iframe security blocks.
+            st.components.v1.html(f"""
+                <style>
+                    button {{
+                        background: #007bff; color: white; border: none; border-radius: 12px;
+                        padding: 12px 20px; font-weight: 700; cursor: pointer; width: 100%;
+                        font-family: -apple-system, system-ui, sans-serif; font-size: 1rem;
+                        transition: all 0.2s ease; box-shadow: 0 4px 10px rgba(0,123,255,0.2);
+                    }}
+                    button:hover {{ background: #0056b3; transform: translateY(-1px); }}
+                </style>
+                <button onclick="window.parent.location.href='{auth_url}'">
+                    🔗 Connect Google Account
+                </button>
+            """, height=60)
+            st.caption("This will securely redirect you to Google to sign in.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 

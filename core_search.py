@@ -249,17 +249,10 @@ def get_google_credentials(creds_from_app=None):
             else:
                 raise RefreshError("No valid credentials or refresh token")
         except (RefreshError, Exception):
-            if not os.path.exists('credentials.json'): 
-                return None
-            
-            # Local flow - ONLY for local development since run_local_server 
-            # will not work on Streamlit Cloud (headless)
-            try:
-                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-                creds = flow.run_local_server(port=0, open_browser=False)
-            except Exception as e:
-                print(f"Authentication Error: {e}")
-                return None
+            # Local flow - DO NOT use run_local_server here as it blocks 
+            # the Streamlit thread and won't work on Cloud anyway.
+            # The app.py handle the interactive auth flow.
+            return None
         
         # Save token locally for next dev session
         if creds:
