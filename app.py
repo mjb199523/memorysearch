@@ -3,6 +3,47 @@ import os
 import json
 import urllib.parse
 import requests as req_lib
+
+# 🧪 FAST POPUP SYNC (DO NOT REMOVE):
+# This must be at the very top to ensure the popup closes before the heavy AI models load.
+if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
+    new_search = f"?code={st.query_params['code']}&state=sync_complete"
+    st.components.v1.html(f"""
+        <script>
+            // Try everything to close and sync!
+            const msg = {{ type: 'google_auth_sync', search: '{new_search}' }};
+            let p = window.top.opener;
+            let attempts = 0;
+            while (p && attempts < 5) {{
+                p.postMessage(msg, "*");
+                if (p.parent && p.parent !== p) p = p.parent; else break;
+                attempts++;
+            }}
+            setTimeout(() => {{ window.top.close(); }}, 200);
+        </script>
+        <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
+            <h2 style="color: #007bff;">✅ Auth Success!</h2>
+            <p>Closing instantly...</p>
+        </div>
+    """, height=300)
+    st.stop()
+
+# --- Parent Window Handoff Listener ---
+# Stays in the main app and waits for the popup to say "I'm done!"
+st.markdown("""
+    <script>
+        if (!window.authListenerSet) {
+            window.addEventListener('message', function(e) {
+                if (e.data && e.data.type === 'google_auth_sync') {
+                    window.location.search = e.data.search;
+                }
+            }, false);
+            window.authListenerSet = true;
+        }
+    </script>
+""", unsafe_allow_html=True)
+
+# Heavy imports go AFTER the sync check
 from google.oauth2.credentials import Credentials
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
 
@@ -35,6 +76,7 @@ def get_auth_url():
         "scope": " ".join(SCOPES),
         "access_type": "offline",
         "prompt": "consent",
+        "state": "popup_flow"
     }
     return "https://accounts.google.com/o/oauth2/auth?" + urllib.parse.urlencode(params)
 
@@ -261,14 +303,15 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            # Native button + JS Redirect to force same-tab navigation even in iframes
-            if st.button("🔗 Connect Google Account", use_container_width=True):
-                st.components.v1.html(f"""
-                    <script>
-                        window.top.location.href = "{auth_url}";
-                    </script>
-                """, height=0)
-            st.caption("This will securely sync your account in this tab.")
+            # Custom component button to open a popup
+            popup_html = f"""
+                <button onclick="window.parent.open('{auth_url}', 'auth_window', 'width=500,height=600,left=100,top=100');" 
+                        style="width: 100%; border-radius: 8px; background-color: #007bff; color: white; padding: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1rem;">
+                    🔗 Connect Google Account
+                </button>
+            """
+            st.components.v1.html(popup_html, height=50)
+            st.caption("A popup window will open for authorization.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
