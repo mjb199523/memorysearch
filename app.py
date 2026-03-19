@@ -186,9 +186,9 @@ with st.sidebar:
                         from datetime import datetime
                         expiry_dt = datetime.fromisoformat(expiry.replace('Z', '+00:00'))
                         if expiry_dt < datetime.now(expiry_dt.tzinfo):
-                            st.warning("⚠️ Google Token Expired. It will attempt to refresh on next search.")
+                            st.warning("⚠️ Google Token Expired. It will automatically re-authenticate on your next search.")
                         else:
-                            st.success("✅ Google APIs Connected")
+                            st.success("✅ Google APIs Connected (Active Session)")
                     else:
                         st.success("✅ Google APIs Connected")
             except Exception:
