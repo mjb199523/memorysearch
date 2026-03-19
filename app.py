@@ -182,21 +182,30 @@ with st.sidebar:
                 with open("token.json", "r") as f:
                     token_data = json.load(f)
                     expiry = token_data.get("expiry")
+                    has_refresh = "refresh_token" in token_data
+                    
                     if expiry:
                         from datetime import datetime
                         expiry_dt = datetime.fromisoformat(expiry.replace('Z', '+00:00'))
                         if expiry_dt < datetime.now(expiry_dt.tzinfo):
-                            st.warning("⚠️ Google Token Expired. It will automatically re-authenticate on your next search.")
+                            if has_refresh:
+                                st.info("🔄 Session Hibernating. It will auto-refresh when you search.")
+                                if st.button("Reconnect Google APIs NOW", use_container_width=True):
+                                    from core_search import get_google_credentials
+                                    if get_google_credentials():
+                                        st.rerun()
+                            else:
+                                st.warning("⚠️ Access Revoked. Re-authentication required.")
                         else:
-                            st.success("✅ Google APIs Connected (Active Session)")
+                            st.success("✅ Google APIs Connected (Active)")
                     else:
                         st.success("✅ Google APIs Connected")
             except Exception:
                 st.error("❌ Token Corrupted. Needs Re-authentication.")
         else:
-            st.info("ℹ️ First run? Authenticate by performing any search.")
+            st.info("ℹ️ Ready to Connect. Authenticate by performing any search.")
     else:
-        st.error("❌ Google APIs Disconnected (credentials.json missing)")
+        st.error("❌ Google APIs Missing (credentials.json)")
 
 # Search Form
 with st.form("search_form", clear_on_submit=False):
