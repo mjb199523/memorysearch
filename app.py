@@ -9,23 +9,26 @@ import requests as req_lib
 if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
     new_search = f"?code={st.query_params['code']}&state=sync_complete"
     st.components.v1.html(f"""
-        <script>
-            // Try everything to close and sync!
-            const msg = {{ type: 'google_auth_sync', search: '{new_search}' }};
-            let p = window.top.opener;
-            let attempts = 0;
-            while (p && attempts < 5) {{
-                p.postMessage(msg, "*");
-                if (p.parent && p.parent !== p) p = p.parent; else break;
-                attempts++;
-            }}
-            setTimeout(() => {{ window.top.close(); }}, 200);
-        </script>
-        <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
-            <h2 style="color: #007bff;">✅ Auth Success!</h2>
-            <p>Closing instantly...</p>
+        <div style="text-align: center; font-family: sans-serif; padding: 20px; border: 2px solid #007bff; border-radius: 12px; height: 100vh;">
+            <h1 style="color: #007bff; margin-bottom: 5px;">✅ Linked!</h1>
+            <p style="color: #666; font-size: 1.1rem; margin-bottom: 25px;">Finalizing connection...</p>
+            <button id="finalBtn" style="padding: 15px 30px; background: #007bff; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                FINISH & CLOSE
+            </button>
         </div>
-    """, height=300)
+        <script>
+            function doFinish() {{
+                if (window.opener) {{
+                    window.opener.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
+                }}
+                setTimeout(() => {{ window.close(); }}, 200);
+            }}
+            // Try automatically first
+            setTimeout(doFinish, 800);
+            // Manual click if auto-close is blocked
+            document.getElementById('finalBtn').onclick = doFinish;
+        </script>
+    """, height=500)
     st.stop()
 
 # --- Parent Window Handoff Listener ---
