@@ -241,13 +241,7 @@ with st.sidebar:
         flow = get_auth_flow()
         if flow:
             auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
-            st.markdown(f'''
-                <a href="{auth_url}" target="_self" style="text-decoration: none;">
-                    <button style="width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-                        Connect Google Account
-                    </button>
-                </a>
-            ''', unsafe_allow_html=True)
+            st.link_button("🔗 Connect Google Account", auth_url, use_container_width=True)
             st.caption("You will be redirected to Google to authorize access.")
 
 # Search Form
