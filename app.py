@@ -5,12 +5,27 @@ from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fe
 
 # -- Handle Streamlit Cloud Secrets --
 try:
-    if "google_credentials" in st.secrets:
+    # Always ensure credentials exist
+    if not os.path.exists("credentials.json") and "google_credentials" in st.secrets:
         with open("credentials.json", "w") as f:
             f.write(st.secrets["google_credentials"])
+            
+    # ONLY load token from secrets if we don't have a valid one locally
     if "google_token" in st.secrets:
-        with open("token.json", "w") as f:
-            f.write(st.secrets["google_token"])
+        is_current_valid = False
+        if os.path.exists("token.json"):
+            try:
+                with open("token.json", "r") as f:
+                    t_data = json.load(f)
+                    from datetime import datetime
+                    exp_dt = datetime.fromisoformat(t_data["expiry"].replace("Z", "+00:00"))
+                    if exp_dt > datetime.now(exp_dt.tzinfo):
+                        is_current_valid = True
+            except: pass
+            
+        if not is_current_valid:
+            with open("token.json", "w") as f:
+                f.write(st.secrets["google_token"])
 except Exception:
     pass
 
