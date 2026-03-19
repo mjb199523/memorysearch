@@ -3,6 +3,27 @@ import os
 import json
 import urllib.parse
 import requests as req_lib
+
+# 🧪 ULTRA-FAST POPUP SYNC:
+# We do this FIRST, before importing heavy models, so the popup closes in milliseconds.
+if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
+    new_search = f"?code={st.query_params['code']}&state=sync_complete"
+    st.components.v1.html(f"""
+        <script>
+            const parent = window.top.opener;
+            if (parent) {{
+                parent.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
+            }}
+            setTimeout(() => {{ window.top.close(); }}, 100);
+        </script>
+        <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
+            <h2 style="color: #007bff;">✅ Auth Success!</h2>
+            <p>Syncing... this window will close instantly.</p>
+        </div>
+    """, height=300)
+    st.stop()
+
+# Heavy imports go HERE (after the fast sync check)
 from google.oauth2.credentials import Credentials
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
 
@@ -15,6 +36,21 @@ is_cloud = os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.e
 if is_cloud and os.path.exists("token.json"):
     try: os.remove("token.json")
     except: pass
+
+# --- Parent Window Handoff Listener ---
+# This small script sits in the main app and waits for the popup to say "I'm done!"
+st.markdown("""
+    <script>
+        if (!window.authListenerSet) {
+            window.addEventListener('message', function(e) {
+                if (e.data && e.data.type === 'google_auth_sync') {
+                    window.location.search = e.data.search;
+                }
+            }, false);
+            window.authListenerSet = true;
+        }
+    </script>
+""", unsafe_allow_html=True)
 
 def get_oauth_config():
     """Load the OAuth client config from Streamlit Secrets or local file."""
@@ -79,70 +115,8 @@ def exchange_code_for_creds(code):
 
 def authenticate_google():
     """Handles the OAuth2 callback and stores credentials in session state."""
-    # 🧪 URGENT POPUP SYNC Logic: 
-    # Do this BEFORE anything else to close the window as fast as possible.
     state = st.query_params.get("state")
     code = st.query_params.get("code")
-
-    # --- Parent Window Handoff Listener ---
-    # This small script sits in the main app and waits for the popup to say "I'm done!"
-    st.markdown("""
-        <script>
-            if (!window.authListenerSet) {
-                window.addEventListener('message', function(e) {
-                    if (e.data && e.data.type === 'google_auth_sync') {
-                        window.location.search = e.data.search;
-                    }
-                }, false);
-                window.authListenerSet = true;
-            }
-        </script>
-    """, unsafe_allow_html=True)
-
-    if code and state == "popup_flow":
-        # The Popup Screen with a premium loader
-        sync_html = f"""
-            <style>
-                .loader {{
-                    border: 4px solid #f3f3f3;
-                    border-top: 4px solid #007bff;
-                    border-radius: 50%;
-                    width: 40px;
-                    height: 40px;
-                    animation: spin 1s linear infinite;
-                    margin: 20px auto;
-                }}
-                @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-                body {{ font-family: -apple-system, system-ui, sans-serif; text-align: center; padding-top: 50px; background: #fff; }}
-            </style>
-            <div class="loader"></div>
-            <h2 style="font-weight: 700; color: #1a1a1a;">Authenticating...</h2>
-            <p style="color: #666;">Completing the secure handoff...</p>
-            
-            <script>
-                function finishAuth() {{
-                    const newSearch = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
-                    let p = window.top.opener;
-                    
-                    // Search for the window that has our listener
-                    // Recursive upwards search 
-                    let attempts = 0;
-                    while (p && attempts < 5) {{
-                        p.postMessage({{ type: 'google_auth_sync', search: newSearch }}, "*");
-                        if (p.parent && p.parent !== p) {{ p = p.parent; }} else {{ break; }}
-                        attempts++;
-                    }}
-                    
-                    // Always try to close as a final act
-                    setTimeout(() => {{ window.top.close(); }}, 500);
-                }}
-                // Execute immediately
-                finishAuth();
-            </script>
-        """
-        st.components.v1.html(sync_html, height=400)
-        st.stop()
-        return None
 
     # 1. Check if we already have valid creds
     if "google_creds" in st.session_state and st.session_state.google_creds.valid:
