@@ -3,6 +3,8 @@ import os
 import json
 import urllib.parse
 import requests as req_lib
+from google.oauth2.credentials import Credentials
+from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
 
 # 🌍 Use production URL on Cloud, localhost on dev
 if os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ:
