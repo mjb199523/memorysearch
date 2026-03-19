@@ -121,16 +121,20 @@ def authenticate_google():
             
             <script>
                 function finishAuth() {{
-                    const parentWindow = window.top.opener;
-                    if (parentWindow) {{
-                        const newSearch = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
-                        // Use postMessage to bypass Cross-Origin restrictions in Streamlit iframes
-                        parentWindow.postMessage({{ type: 'google_auth_sync', search: newSearch }}, "*");
-                        setTimeout(() => {{ window.top.close(); }}, 500);
-                    }} else {{
-                        // Fallback if opener is lost
-                        window.top.location.search = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
+                    const newSearch = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
+                    let p = window.top.opener;
+                    
+                    // Search for the window that has our listener
+                    // Recursive upwards search 
+                    let attempts = 0;
+                    while (p && attempts < 5) {{
+                        p.postMessage({{ type: 'google_auth_sync', search: newSearch }}, "*");
+                        if (p.parent && p.parent !== p) {{ p = p.parent; }} else {{ break; }}
+                        attempts++;
                     }}
+                    
+                    // Always try to close as a final act
+                    setTimeout(() => {{ window.top.close(); }}, 500);
                 }}
                 // Execute immediately
                 finishAuth();
@@ -335,7 +339,7 @@ with st.sidebar:
             # Native Streamlit link_button opens a new tab. 
             # To open a popup, we use a custom component.
             button_html = f"""
-                <button onclick="child_window = window.open('{auth_url}', 'auth_window', 'width=500,height=600,left=100,top=100');" 
+                <button onclick="window.parent.open('{auth_url}', 'auth_window', 'width=500,height=600,left=100,top=100');" 
                         style="width: 100%; border-radius: 8px; background-color: #007bff; color: white; padding: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600;">
                     🔗 Connect Google Account
                 </button>
