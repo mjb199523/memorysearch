@@ -3,31 +3,61 @@ import os
 import json
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive
 
-# -- Handle Streamlit Cloud Secrets --
-try:
-    # Always ensure credentials exist
+from google_auth_oauthlib.flow import Flow
+from core_search import SCOPES
+
+# -- Handle Streamlit Cloud Auth --
+# Cleanup: If a legacy token.json exists on the cloud server, it will connect everyone to the owner's account.
+# We remove it to force individual logins.
+if os.getenv("STREAMLIT_SERVER_ADDRESS") and os.path.exists("token.json"):
+    try: os.remove("token.json")
+    except: pass
+
+# This ensures that EACH user on the app can connect their OWN Google account.
+def get_auth_flow():
+    # If credentials.json is missing but in secrets, create it temporarily
     if not os.path.exists("credentials.json") and "google_credentials" in st.secrets:
         with open("credentials.json", "w") as f:
             f.write(st.secrets["google_credentials"])
             
-    # ONLY load token from secrets if we don't have a valid one locally
-    if "google_token" in st.secrets:
-        is_current_valid = False
-        if os.path.exists("token.json"):
-            try:
-                with open("token.json", "r") as f:
-                    t_data = json.load(f)
-                    from datetime import datetime
-                    exp_dt = datetime.fromisoformat(t_data["expiry"].replace("Z", "+00:00"))
-                    if exp_dt > datetime.now(exp_dt.tzinfo):
-                        is_current_valid = True
-            except: pass
-            
-        if not is_current_valid:
-            with open("token.json", "w") as f:
-                f.write(st.secrets["google_token"])
-except Exception:
-    pass
+    if not os.path.exists("credentials.json"):
+        st.error("⚠️ Google OAuth configuration (credentials.json) is missing. Check your Streamlit Secrets.")
+        return None
+
+    # Redirect URI for Streamlit Cloud and local dev
+    redirect_uri = "https://memorysearch.streamlit.app/"
+    if "localhost" in st.query_params.get("host", [""])[0] or not os.getenv("STREAMLIT_SERVER_ADDRESS"):
+         # Attempt to detect local dev (Streamlit doesn't always show the host in query_params)
+         pass 
+
+    flow = Flow.from_client_secrets_file(
+        'credentials.json',
+        scopes=SCOPES,
+        redirect_uri=redirect_uri
+    )
+    return flow
+
+def authenticate_google():
+    """Handles the OAuth2 flow and returns credentials if authenticated."""
+    if "google_creds" in st.session_state:
+        return st.session_state.google_creds
+
+    # Check for authentication code in the URL (returned from Google)
+    if "code" in st.query_params:
+        try:
+            flow = get_auth_flow()
+            if flow:
+                flow.fetch_token(code=st.query_params["code"])
+                st.session_state.google_creds = flow.credentials
+                # Clear query params to clean the URL
+                st.query_params.clear()
+                st.rerun()
+        except Exception as e:
+            st.error(f"Failed to authenticate: {e}")
+
+    return None
+
+auth_creds = authenticate_google()
 
 
 # -- Page Config --
@@ -186,46 +216,32 @@ with st.sidebar:
     local_dir = st.text_input("Local Folder Path:", value=os.path.join(os.path.expanduser("~"), "Documents"))
     
     st.markdown("---")
-    st.subheader("🔑 Google Auth")
+    st.subheader("🔑 Google Connection")
     
-    has_creds = os.path.exists("credentials.json")
-    has_token = os.path.exists("token.json")
+    # Check session-based credentials first
+    is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None
     
-    if has_creds:
-        if has_token:
-            try:
-                with open("token.json", "r") as f:
-                    token_data = json.load(f)
-                    expiry = token_data.get("expiry")
-                    has_refresh = "refresh_token" in token_data
-                    
-                    if expiry:
-                        from datetime import datetime
-                        expiry_dt = datetime.fromisoformat(expiry.replace('Z', '+00:00'))
-                        if expiry_dt < datetime.now(expiry_dt.tzinfo):
-                            if has_refresh:
-                                st.info("🔄 Session Hibernating. It will auto-refresh when you search.")
-                                if st.button("Reconnect Google APIs NOW", use_container_width=True):
-                                    with st.spinner("Refreshing session..."):
-                                        from core_search import get_google_credentials
-                                        creds = get_google_credentials()
-                                        if creds:
-                                            st.success("Session Refreshed!")
-                                            st.rerun()
-                                        else:
-                                            st.error("⚠️ Connection Failed. Your Cloud secrets might be outdated.")
-                            else:
-                                st.warning("⚠️ Access Revoked. Manual re-auth required.")
-                        else:
-                            st.success("✅ Google APIs Connected (Active)")
-                    else:
-                        st.success("✅ Google APIs Connected")
-            except Exception:
-                st.error("❌ Token Corrupted. Needs Re-authentication.")
-        else:
-            st.info("ℹ️ Ready to Connect. Authenticate by performing any search.")
+    if "google_creds" in st.session_state and st.session_state.google_creds.valid:
+        st.success("✅ Connected to your Google Account")
+        if st.button("Logout of Google"):
+            del st.session_state.google_creds
+            st.rerun()
+    elif not is_cloud and os.path.exists("token.json"):
+        # Fallback to local token ONLY when running locally
+        st.success("✅ Connected (Local Session)")
     else:
-        st.error("❌ Google APIs Missing (credentials.json)")
+        st.info("Personalize your search by connecting your Google account.")
+        flow = get_auth_flow()
+        if flow:
+            auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+            st.markdown(f'''
+                <a href="{auth_url}" target="_self" style="text-decoration: none;">
+                    <button style="width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                        Connect Google Account
+                    </button>
+                </a>
+            ''', unsafe_allow_html=True)
+            st.caption("You will be redirected to Google to authorize access.")
 
 # Search Form
 with st.form("search_form", clear_on_submit=False):
@@ -235,9 +251,13 @@ with st.form("search_form", clear_on_submit=False):
         label_visibility="collapsed"
     )
     
+    # Enable Google sources if we have a session OR (running locally AND a token exists)
+    is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None
+    can_search_google = ("google_creds" in st.session_state) or (not is_cloud and os.path.exists("token.json"))
+    
     col1, col2, col3 = st.columns([1,1,1])
-    with col1: search_email = st.checkbox("Gmail (Primary Only)", value=has_creds, disabled=not has_creds)
-    with col2: search_drive = st.checkbox("Google Drive", value=has_creds, disabled=not has_creds)
+    with col1: search_email = st.checkbox("Gmail (Primary Only)", value=can_search_google, disabled=False)
+    with col2: search_drive = st.checkbox("Google Drive", value=can_search_google, disabled=False)
     with col3: search_local = st.checkbox("Local Documents", value=True)
     
     submitted = st.form_submit_button("Search My Memory", type="primary", use_container_width=True)
@@ -252,8 +272,19 @@ if submitted and query:
             
             # Fetch Data
             if search_local: documents.extend(fetch_local_files(local_dir, max_files=40))
-            if search_email: documents.extend(fetch_gmail(query))
-            if search_drive: documents.extend(fetch_google_drive(query))
+            
+            # Pass external_creds if available in session
+            ext_creds = st.session_state.get("google_creds")
+            
+            # Warn if user picked Google sources but isn't connected
+            is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None
+            is_connected = ("google_creds" in st.session_state) or (not is_cloud and os.path.exists("token.json"))
+            
+            if (search_email or search_drive) and not is_connected:
+                st.warning("⚠️ Google sources selected but account not connected. Please connect in the sidebar.")
+            
+            if search_email: documents.extend(fetch_gmail(query, external_creds=ext_creds))
+            if search_drive: documents.extend(fetch_google_drive(query, external_creds=ext_creds))
 
             if documents:
                 # Semantic Rank

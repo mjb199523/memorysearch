@@ -234,7 +234,10 @@ def fetch_local_files(directory_path, max_files=50):
 
 from google.auth.exceptions import RefreshError
 
-def get_google_credentials():
+def get_google_credentials(creds_from_app=None):
+    if creds_from_app:
+        return creds_from_app
+        
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
@@ -249,7 +252,8 @@ def get_google_credentials():
             if not os.path.exists('credentials.json'): 
                 return None
             
-            # Local flow - Streamlit Cloud will need st.secrets update
+            # Local flow - ONLY for local development since run_local_server 
+            # will not work on Streamlit Cloud (headless)
             try:
                 flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
                 creds = flow.run_local_server(port=0, open_browser=False)
@@ -257,16 +261,18 @@ def get_google_credentials():
                 print(f"Authentication Error: {e}")
                 return None
         
-        # Save token
+        # Save token locally for next dev session
         if creds:
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
+            try:
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+            except: pass
                 
     return creds
 
-def fetch_gmail(query_text, max_results=15):
+def fetch_gmail(query_text, max_results=15, external_creds=None):
     """Parallelized Gmail search with strict filtering."""
-    creds = get_google_credentials()
+    creds = get_google_credentials(external_creds)
     if not creds: return []
     try:
         service = build('gmail', 'v1', credentials=creds)
@@ -344,9 +350,9 @@ def fetch_gmail(query_text, max_results=15):
         print(f"Gmail Error: {e}")
         return []
 
-def fetch_google_drive(query_text, max_results=20):
+def fetch_google_drive(query_text, max_results=20, external_creds=None):
     """Parallelized Google Drive search with deep content extraction."""
-    creds = get_google_credentials()
+    creds = get_google_credentials(external_creds)
     if not creds: return []
     try:
         service = build('drive', 'v3', credentials=creds)
