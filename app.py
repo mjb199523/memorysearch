@@ -4,54 +4,39 @@ import json
 import urllib.parse
 import requests as req_lib
 
+REDIRECT_URI = "https://memorysearch.streamlit.app"
+
 # 🧪 FAST POPUP SYNC (DO NOT REMOVE):
 # This must be at the very top to ensure the popup closes before the heavy AI models load.
 if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
-    new_search = f"?code={st.query_params['code']}&state=sync_complete"
-    st.components.v1.html(f"""
-        <div style="text-align: center; font-family: sans-serif; padding: 20px; border: 2px solid #007bff; border-radius: 12px; height: 100vh;">
-            <h1 style="color: #007bff; margin-bottom: 5px;">✅ Linked!</h1>
-            <p style="color: #666; font-size: 1.1rem; margin-bottom: 25px;">Finalizing connection...</p>
-            <button id="finalBtn" style="padding: 15px 30px; background: #007bff; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                FINISH & CLOSE
-            </button>
-        </div>
-        <script>
-            function doFinish() {{
-                const topWin = window.top;
-                if (topWin.opener) {{
-                    topWin.opener.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
-                }}
-                setTimeout(() => {{ topWin.close(); }}, 200);
-            }}
-            // Try automatically first
-            setTimeout(doFinish, 800);
-            // Manual click if auto-close is blocked
-            document.getElementById('finalBtn').onclick = doFinish;
-        </script>
-    """, height=500)
+    # 🧪 SAME-ORIGIN HANDOFF:
+    # First, let's get the popup back onto the main app domain so it can talk to the opener safely.
+    main_app_url = f"{REDIRECT_URI}/?code={st.query_params['code']}&state=sync_ready"
+    st.markdown(f'<meta http-equiv="refresh" content="0;URL=\'{main_app_url}\'">', unsafe_allow_html=True)
     st.stop()
 
-# --- Parent Window Handoff Listener ---
-# Stays in the main app and waits for the popup to say "I'm done!"
-st.markdown("""
-    <script>
-        if (!window.authListenerSet) {
-            window.addEventListener('message', function(e) {
-                if (e.data && e.data.type === 'google_auth_sync') {
-                    window.location.search = e.data.search;
-                }
-            }, false);
-            window.authListenerSet = true;
-        }
-    </script>
-""", unsafe_allow_html=True)
+if "code" in st.query_params and st.query_params.get("state") == "sync_ready":
+    # Now that we are on the same domain as the parent, we can finally close and sync!
+    st.components.v1.html(f"""
+        <script>
+            if (window.opener) {{
+                window.opener.location.search = window.location.search.replace('state=sync_ready', 'state=sync_complete');
+                window.close();
+            }} else {{
+                // Fallback if opener is lost
+                window.location.search = window.location.search.replace('state=sync_ready', 'state=sync_complete');
+            }}
+        </script>
+        <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
+            <h2>✅ Connected!</h2>
+            <p>Syncing... this window will close instantly.</p>
+        </div>
+    """, height=300)
+    st.stop()
 
 # Heavy imports go AFTER the sync check
 from google.oauth2.credentials import Credentials
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
-
-REDIRECT_URI = "https://memorysearch.streamlit.app"
 
 # -- Handle Streamlit Cloud Auth --
 is_cloud = os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ
