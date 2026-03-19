@@ -3,77 +3,31 @@ import os
 import json
 import urllib.parse
 import requests as req_lib
-
-# 🧪 ULTRA-FAST POPUP SYNC:
-# We do this FIRST, before importing heavy models, so the popup closes in milliseconds.
-if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
-    new_search = f"?code={st.query_params['code']}&state=sync_complete"
-    st.components.v1.html(f"""
-        <script>
-            const parent = window.top.opener;
-            if (parent) {{
-                parent.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
-            }}
-            setTimeout(() => {{ window.top.close(); }}, 100);
-        </script>
-        <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
-            <h2 style="color: #007bff;">✅ Auth Success!</h2>
-            <p>Syncing... this window will close instantly.</p>
-        </div>
-    """, height=300)
-    st.stop()
-
-# Heavy imports go HERE (after the fast sync check)
 from google.oauth2.credentials import Credentials
 from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
 
 REDIRECT_URI = "https://memorysearch.streamlit.app"
 
 # -- Handle Streamlit Cloud Auth --
-# Force individual logins on Streamlit Cloud by ignoring/cleaning any legacy token.json
 is_cloud = os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ
-
 if is_cloud and os.path.exists("token.json"):
     try: os.remove("token.json")
     except: pass
 
-# --- Parent Window Handoff Listener ---
-# This small script sits in the main app and waits for the popup to say "I'm done!"
-st.markdown("""
-    <script>
-        if (!window.authListenerSet) {
-            window.addEventListener('message', function(e) {
-                if (e.data && e.data.type === 'google_auth_sync') {
-                    window.location.search = e.data.search;
-                }
-            }, false);
-            window.authListenerSet = true;
-        }
-    </script>
-""", unsafe_allow_html=True)
-
 def get_oauth_config():
     """Load the OAuth client config from Streamlit Secrets or local file."""
-    # Always prefer secrets (overwrites any cached file)
     if "google_credentials" in st.secrets:
-        try:
-            return json.loads(st.secrets["google_credentials"])
-        except Exception as e:
-            st.error(f"⚠️ Could not parse google_credentials secret: {e}")
-            return None
+        try: return json.loads(st.secrets["google_credentials"])
+        except: return None
     if os.path.exists("credentials.json"):
-        with open("credentials.json") as f:
-            return json.load(f)
+        with open("credentials.json") as f: return json.load(f)
     return None
 
 def get_auth_url():
-    """Build Google OAuth URL manually WITHOUT PKCE. PKCE breaks multi-session flows."""
+    """Build Google OAuth URL for a clean same-tab redirect."""
     config = get_oauth_config()
-    if not config:
-        return None
+    if not config: return None
     web = config.get("web") or config.get("installed")
-    if not web:
-        return None
     params = {
         "client_id": web["client_id"],
         "redirect_uri": REDIRECT_URI,
@@ -81,18 +35,14 @@ def get_auth_url():
         "scope": " ".join(SCOPES),
         "access_type": "offline",
         "prompt": "consent",
-        "state": "popup_flow"
     }
     return "https://accounts.google.com/o/oauth2/auth?" + urllib.parse.urlencode(params)
 
 def exchange_code_for_creds(code):
-    """Exchange authorization code for Google Credentials without PKCE."""
+    """Exchange authorization code for Google Credentials."""
     config = get_oauth_config()
-    if not config:
-        return None
+    if not config: return None
     web = config.get("web") or config.get("installed")
-    if not web:
-        return None
     resp = req_lib.post("https://oauth2.googleapis.com/token", data={
         "code": code,
         "client_id": web["client_id"],
@@ -110,26 +60,27 @@ def exchange_code_for_creds(code):
             client_secret=web["client_secret"],
             scopes=SCOPES,
         )
-    st.error(f"Token exchange failed: {resp.text}")
     return None
 
 def authenticate_google():
     """Handles the OAuth2 callback and stores credentials in session state."""
-    state = st.query_params.get("state")
+    # 1. Process the code if we just returned from Google
     code = st.query_params.get("code")
-
-    # 1. Check if we already have valid creds
+    if code:
+        # Show a quick loading state while we exchange the code
+        with st.status("🔐 Connecting to your Google account...", expanded=False) as status:
+            creds = exchange_code_for_creds(code)
+            if creds:
+                st.session_state.google_creds = creds
+                status.update(label="✅ Connected!", state="complete")
+                st.query_params.clear()
+                st.rerun()
+            else:
+                status.update(label="❌ Connection failed. Please try again.", state="error")
+    
+    # 2. Check session state for existing creds
     if "google_creds" in st.session_state and st.session_state.google_creds.valid:
         return st.session_state.google_creds
-
-    # 2. Process the code if we are the parent window (state=sync_complete)
-    if code and state == "sync_complete":
-        creds = exchange_code_for_creds(code)
-        if creds:
-            st.session_state.google_creds = creds
-            # Clear query params to clean the URL
-            st.query_params.clear()
-            st.rerun()
 
     return None
 
@@ -307,19 +258,17 @@ with st.sidebar:
         # Fallback to local token ONLY when running locally
         st.success("✅ Connected (Local Session)")
     else:
-        st.info("Personalize your search by connecting your Google account.")
+        st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            # Native Streamlit link_button opens a new tab. 
-            # To open a popup, we use a custom component.
-            button_html = f"""
-                <button onclick="window.parent.open('{auth_url}', 'auth_window', 'width=500,height=600,left=100,top=100');" 
-                        style="width: 100%; border-radius: 8px; background-color: #007bff; color: white; padding: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600;">
-                    🔗 Connect Google Account
-                </button>
-            """
-            st.components.v1.html(button_html, height=50)
-            st.caption("A popup window will open for authorization.")
+            st.markdown(f"""
+                <a href="{auth_url}" target="_top" style="text-decoration: none;">
+                    <div style="width: 100%; text-align: center; border-radius: 8px; background-color: #007bff; color: white; padding: 10px 0; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600;">
+                        🔗 Connect Google Account
+                    </div>
+                </a>
+            """, unsafe_allow_html=True)
+            st.caption("You will be redirected briefly to Google's login page.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
