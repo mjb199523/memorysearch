@@ -261,8 +261,14 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            st.link_button("🔗 Connect Google Account", auth_url, use_container_width=True)
-            st.caption("This will securely take you to Google's sign-in page.")
+            st.markdown(f"""
+                <a href="{auth_url}" target="_top" style="text-decoration: none;">
+                    <button style="width: 100%; border-radius: 8px; background-color: #007bff; color: white; padding: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1rem;">
+                        🔗 Connect Google Account
+                    </button>
+                </a>
+            """, unsafe_allow_html=True)
+            st.caption("This will securely sync your account in this tab.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
