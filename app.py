@@ -16,8 +16,9 @@ if is_cloud and os.path.exists("token.json"):
 
 # This ensures that EACH user on the app can connect their OWN Google account.
 def get_auth_flow():
-    # If credentials.json is missing but in secrets, create it temporarily
-    if not os.path.exists("credentials.json") and "google_credentials" in st.secrets:
+    # ALWAYS write credentials from Streamlit Secrets to ensure we use the latest key.
+    # Never rely on a cached credentials.json from a previous run.
+    if "google_credentials" in st.secrets:
         with open("credentials.json", "w") as f:
             f.write(st.secrets["google_credentials"])
             
