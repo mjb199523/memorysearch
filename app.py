@@ -85,36 +85,41 @@ def authenticate_google():
     code = st.query_params.get("code")
 
     if code and state == "popup_flow":
-        st.markdown(f"""
-            <div style="text-align: center; font-family: 'Inter', sans-serif; padding: 40px 20px; color: #1a1a1a;">
-                <h2 style="font-weight: 700; margin-bottom: 10px;">🔐 Auth Success!</h2>
-                <p style="color: #666; margin-bottom: 30px;">Syncing your account with MemorySearch...</p>
-                <button id="syncBtn" style="padding: 12px 24px; border-radius: 10px; background: #007bff; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,123,255,0.2);">
-                    Click to Finish Sync
+        # We use a dedicated HTML component because st.markdown often strips <script> tags on the cloud for security.
+        # This isolated component can communicate back to the parent window via window.top.opener.
+        sync_html = f"""
+            <div style="text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding-top: 40px;">
+                <h2 style="font-weight: 700; color: #1a1a1a;">🔐 Auth Success!</h2>
+                <p style="color: #666; margin-bottom: 25px;">Syncing your account with MemorySearch...</p>
+                <button id="finishBtn" style="padding: 12px 24px; border-radius: 10px; background: #007bff; color: white; border: none; cursor: pointer; font-weight: 600; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,123,255,0.2);">
+                    Finish Sync & Close
                 </button>
             </div>
             <script>
                 function doSync() {{
-                    if (window.opener) {{
+                    const parent = window.top.opener;
+                    if (parent) {{
                         try {{
-                            window.opener.location.search = window.location.search.replace('state=popup_flow', 'state=sync_complete');
-                            window.close();
+                            // Sync the code to the parent and close
+                            parent.location.search = window.top.location.search.replace('state=popup_flow', 'state=sync_complete');
+                            window.top.close();
                         }} catch (e) {{
-                            alert("Please manually refresh your original MemorySearch tab.");
-                            window.close();
+                            console.error(e);
+                            alert("Handoff failed. Please refresh your main MemorySearch tab manually.");
                         }}
                     }} else {{
-                        alert("Close this window and refresh your main MemorySearch page.");
+                        alert("Parent window not found. Please refresh your main page manually.");
                     }}
                 }}
                 
-                // Try automatic sync immediately
-                setTimeout(doSync, 500);
+                // Set up the manual button
+                document.getElementById('finishBtn').onclick = doSync;
                 
-                // Manual trigger
-                document.getElementById('syncBtn').onclick = doSync;
+                // Try auto-sync in 1 second
+                setTimeout(doSync, 1000);
             </script>
-        """, unsafe_allow_html=True)
+        """
+        st.components.v1.html(sync_html, height=300)
         st.stop()
         return None
 
