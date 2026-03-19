@@ -18,10 +18,11 @@ if "code" in st.query_params and st.query_params.get("state") == "popup_flow":
         </div>
         <script>
             function doFinish() {{
-                if (window.opener) {{
-                    window.opener.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
+                const topWin = window.top;
+                if (topWin.opener) {{
+                    topWin.opener.postMessage({{ type: 'google_auth_sync', search: '{new_search}' }}, "*");
                 }}
-                setTimeout(() => {{ window.close(); }}, 200);
+                setTimeout(() => {{ topWin.close(); }}, 200);
             }}
             // Try automatically first
             setTimeout(doFinish, 800);
