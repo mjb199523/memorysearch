@@ -309,15 +309,10 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            # Custom component button to open a popup
-            popup_html = f"""
-                <button onclick="window.parent.open('{auth_url}', 'auth_window', 'width=500,height=600,left=100,top=100');" 
-                        style="width: 100%; border-radius: 8px; background-color: #007bff; color: white; padding: 10px; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1rem;">
-                    🔗 Connect Google Account
-                </button>
-            """
-            st.components.v1.html(popup_html, height=50)
-            st.caption("A popup window will open for authorization.")
+            # PURE HTML LINK (No JS) - The ONLY un-blockable way to redirect from a sidebar iframe
+            link_style = "display: block; width: 100%; text-align: center; border-radius: 8px; background-color: #007bff; color: white !important; padding: 12px 0; text-decoration: none; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1rem; border: none;"
+            st.markdown(f'<a href="{auth_url}" target="_top" style="{link_style}">🔗 Connect Google Account</a>', unsafe_allow_html=True)
+            st.caption("Sign in in this tab. Guaranteed to work on all browsers.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
