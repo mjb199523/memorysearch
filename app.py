@@ -1,10 +1,12 @@
 import streamlit as st
 import os
 import json
-from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive
+import urllib.parse
+import requests as req_lib
+from google.oauth2.credentials import Credentials
+from core_search import SemanticSearchEngine, fetch_local_files, fetch_gmail, fetch_google_drive, SCOPES
 
-from google_auth_oauthlib.flow import Flow
-from core_search import SCOPES
+REDIRECT_URI = "https://memorysearch.streamlit.app"
 
 # -- Handle Streamlit Cloud Auth --
 # Force individual logins on Streamlit Cloud by ignoring/cleaning any legacy token.json
@@ -14,52 +16,78 @@ if is_cloud and os.path.exists("token.json"):
     try: os.remove("token.json")
     except: pass
 
-# This ensures that EACH user on the app can connect their OWN Google account.
-def get_auth_flow():
-    # ALWAYS write credentials from Streamlit Secrets to ensure we use the latest key.
-    # Never rely on a cached credentials.json from a previous run.
+def get_oauth_config():
+    """Load the OAuth client config from Streamlit Secrets or local file."""
+    # Always prefer secrets (overwrites any cached file)
     if "google_credentials" in st.secrets:
-        with open("credentials.json", "w") as f:
-            f.write(st.secrets["google_credentials"])
-            
-    if not os.path.exists("credentials.json"):
-        st.error("⚠️ Google OAuth configuration (credentials.json) is missing. Check your Streamlit Secrets.")
-        return None
+        try:
+            return json.loads(st.secrets["google_credentials"])
+        except Exception as e:
+            st.error(f"⚠️ Could not parse google_credentials secret: {e}")
+            return None
+    if os.path.exists("credentials.json"):
+        with open("credentials.json") as f:
+            return json.load(f)
+    return None
 
-    # Redirect URI for Streamlit Cloud and local dev
-    # Standard Streamlit Cloud URLs do not have a trailing slash
-    redirect_uri = "https://memorysearch.streamlit.app"
-    
-    # Try to detect the correct host dynamically
-    if "host" in st.query_params:
-        current_host = st.query_params["host"]
-        if "localhost" in current_host:
-            redirect_uri = f"http://localhost:8501"
-    
-    flow = Flow.from_client_secrets_file(
-        'credentials.json',
-        scopes=SCOPES,
-        redirect_uri=redirect_uri
-    )
-    return flow
+def get_auth_url():
+    """Build Google OAuth URL manually WITHOUT PKCE. PKCE breaks multi-session flows."""
+    config = get_oauth_config()
+    if not config:
+        return None
+    web = config.get("web") or config.get("installed")
+    if not web:
+        return None
+    params = {
+        "client_id": web["client_id"],
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    return "https://accounts.google.com/o/oauth2/auth?" + urllib.parse.urlencode(params)
+
+def exchange_code_for_creds(code):
+    """Exchange authorization code for Google Credentials without PKCE."""
+    config = get_oauth_config()
+    if not config:
+        return None
+    web = config.get("web") or config.get("installed")
+    if not web:
+        return None
+    resp = req_lib.post("https://oauth2.googleapis.com/token", data={
+        "code": code,
+        "client_id": web["client_id"],
+        "client_secret": web["client_secret"],
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code",
+    })
+    if resp.status_code == 200:
+        token = resp.json()
+        return Credentials(
+            token=token["access_token"],
+            refresh_token=token.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=web["client_id"],
+            client_secret=web["client_secret"],
+            scopes=SCOPES,
+        )
+    st.error(f"Token exchange failed: {resp.text}")
+    return None
 
 def authenticate_google():
-    """Handles the OAuth2 flow and returns credentials if authenticated."""
+    """Handles the OAuth2 callback and stores credentials in session state."""
     if "google_creds" in st.session_state:
         return st.session_state.google_creds
 
-    # Check for authentication code in the URL (returned from Google)
+    # Google redirects back here with a ?code= parameter
     if "code" in st.query_params:
-        try:
-            flow = get_auth_flow()
-            if flow:
-                flow.fetch_token(code=st.query_params["code"])
-                st.session_state.google_creds = flow.credentials
-                # Clear query params to clean the URL
-                st.query_params.clear()
-                st.rerun()
-        except Exception as e:
-            st.error(f"Failed to authenticate: {e}")
+        creds = exchange_code_for_creds(st.query_params["code"])
+        if creds:
+            st.session_state.google_creds = creds
+            st.query_params.clear()
+            st.rerun()
 
     return None
 
@@ -238,11 +266,12 @@ with st.sidebar:
         st.success("✅ Connected (Local Session)")
     else:
         st.info("Personalize your search by connecting your Google account.")
-        flow = get_auth_flow()
-        if flow:
-            auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+        auth_url = get_auth_url()
+        if auth_url:
             st.link_button("🔗 Connect Google Account", auth_url, use_container_width=True)
             st.caption("You will be redirected to Google to authorize access.")
+        else:
+            st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
 # Search Form
 with st.form("search_form", clear_on_submit=False):
