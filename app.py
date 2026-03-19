@@ -26,11 +26,15 @@ def get_auth_flow():
         return None
 
     # Redirect URI for Streamlit Cloud and local dev
-    redirect_uri = "https://memorysearch.streamlit.app/"
-    if "localhost" in st.query_params.get("host", [""])[0] or not os.getenv("STREAMLIT_SERVER_ADDRESS"):
-         # Attempt to detect local dev (Streamlit doesn't always show the host in query_params)
-         pass 
-
+    # Standard Streamlit Cloud URLs do not have a trailing slash
+    redirect_uri = "https://memorysearch.streamlit.app"
+    
+    # Try to detect the correct host dynamically
+    if "host" in st.query_params:
+        current_host = st.query_params["host"]
+        if "localhost" in current_host:
+            redirect_uri = f"http://localhost:8501"
+    
     flow = Flow.from_client_secrets_file(
         'credentials.json',
         scopes=SCOPES,
