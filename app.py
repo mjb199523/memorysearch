@@ -272,23 +272,23 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            # Same-tab redirect is the only 100% reliable way on Streamlit Cloud
-            # to bypass cross-origin iframe security blocks.
+            # Use 'target="_top"' to reliably breakout of the Streamlit iframe
+            # and redirect the main browser window to Google.
             st.components.v1.html(f"""
                 <style>
-                    button {{
-                        background: #007bff; color: white; border: none; border-radius: 12px;
-                        padding: 12px 20px; font-weight: 700; cursor: pointer; width: 100%;
-                        font-family: -apple-system, system-ui, sans-serif; font-size: 1rem;
-                        transition: all 0.2s ease; box-shadow: 0 4px 10px rgba(0,123,255,0.2);
+                    .connect-btn {{
+                        display: block; text-align: center; text-decoration: none;
+                        background: #007bff; color: white; border-radius: 12px;
+                        padding: 12px 20px; font-weight: 700; font-family: -apple-system, system-ui, sans-serif;
+                        font-size: 1rem; transition: all 0.2s ease; box-shadow: 0 4px 10px rgba(0,123,255,0.2);
                     }}
-                    button:hover {{ background: #0056b3; transform: translateY(-1px); }}
+                    .connect-btn:hover {{ background: #0056b3; transform: translateY(-1px); }}
                 </style>
-                <button onclick="window.parent.location.href='{auth_url}'">
+                <a class="connect-btn" href="{auth_url}" target="_top">
                     🔗 Connect Google Account
-                </button>
+                </a>
             """, height=60)
-            st.caption("This will securely redirect you to Google to sign in.")
+            st.caption("Securely redirect to Google.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
