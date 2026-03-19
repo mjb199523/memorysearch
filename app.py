@@ -7,9 +7,10 @@ from google_auth_oauthlib.flow import Flow
 from core_search import SCOPES
 
 # -- Handle Streamlit Cloud Auth --
-# Cleanup: If a legacy token.json exists on the cloud server, it will connect everyone to the owner's account.
-# We remove it to force individual logins.
-if os.getenv("STREAMLIT_SERVER_ADDRESS") and os.path.exists("token.json"):
+# Force individual logins on Streamlit Cloud by ignoring/cleaning any legacy token.json
+is_cloud = os.path.exists("/home/appuser") or "STREAMLIT_SERVER_ADDRESS" in os.environ
+
+if is_cloud and os.path.exists("token.json"):
     try: os.remove("token.json")
     except: pass
 
@@ -219,7 +220,8 @@ with st.sidebar:
     st.subheader("🔑 Google Connection")
     
     # Check session-based credentials first
-    is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None
+    # Improved cloud detection: Streamlit Cloud sets STREAMLIT_SERVER_ADDRESS and has /home/appuser
+    is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None or os.path.exists("/home/appuser")
     
     if "google_creds" in st.session_state and st.session_state.google_creds.valid:
         st.success("✅ Connected to your Google Account")
@@ -252,7 +254,6 @@ with st.form("search_form", clear_on_submit=False):
     )
     
     # Enable Google sources if we have a session OR (running locally AND a token exists)
-    is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None
     can_search_google = ("google_creds" in st.session_state) or (not is_cloud and os.path.exists("token.json"))
     
     col1, col2, col3 = st.columns([1,1,1])
@@ -277,7 +278,6 @@ if submitted and query:
             ext_creds = st.session_state.get("google_creds")
             
             # Warn if user picked Google sources but isn't connected
-            is_cloud = os.getenv("STREAMLIT_SERVER_ADDRESS") is not None
             is_connected = ("google_creds" in st.session_state) or (not is_cloud and os.path.exists("token.json"))
             
             if (search_email or search_drive) and not is_connected:
