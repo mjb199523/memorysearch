@@ -272,23 +272,16 @@ with st.sidebar:
         st.info("Log in with your Google account to enable email and drive search.")
         auth_url = get_auth_url()
         if auth_url:
-            # Use 'target="_top"' to reliably breakout of the Streamlit iframe
-            # and redirect the main browser window to Google.
-            st.components.v1.html(f"""
-                <style>
-                    .connect-btn {{
-                        display: block; text-align: center; text-decoration: none;
-                        background: #007bff; color: white; border-radius: 12px;
-                        padding: 12px 20px; font-weight: 700; font-family: -apple-system, system-ui, sans-serif;
-                        font-size: 1rem; transition: all 0.2s ease; box-shadow: 0 4px 10px rgba(0,123,255,0.2);
-                    }}
-                    .connect-btn:hover {{ background: #0056b3; transform: translateY(-1px); }}
-                </style>
-                <a class="connect-btn" href="{auth_url}" target="_top">
-                    🔗 Connect Google Account
-                </a>
-            """, height=60)
-            st.caption("Securely redirect to Google.")
+            # Standard markdown links are the most reliable way to breakout of Streamlit Cloud iframes
+            # without triggering security blocks.
+            st.markdown(f"""
+                <div style="background: #007bff; padding: 18px; border-radius: 12px; border: 1px solid #0056b3; text-align: center;">
+                    <a href="{auth_url}" target="_top" style="color: white; text-decoration: none; font-weight: 700; font-size: 1.1rem;">
+                        🔗 CLICK HERE TO CONNECT
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
+            st.info("Follow the link above to securely sign in with Google.")
         else:
             st.error("⚠️ google_credentials secret is missing. Check your Streamlit Secrets.")
 
