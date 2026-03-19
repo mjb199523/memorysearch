@@ -169,11 +169,34 @@ st.markdown('<p class="subtitle">Your private memory assistant. Find what you ac
 with st.sidebar:
     st.header("⚙️ Settings")
     local_dir = st.text_input("Local Folder Path:", value=os.path.join(os.path.expanduser("~"), "Documents"))
+    
+    st.markdown("---")
+    st.subheader("🔑 Google Auth")
+    
     has_creds = os.path.exists("credentials.json")
+    has_token = os.path.exists("token.json")
+    
     if has_creds:
-        st.success("Google APIs Connected")
+        if has_token:
+            try:
+                with open("token.json", "r") as f:
+                    token_data = json.load(f)
+                    expiry = token_data.get("expiry")
+                    if expiry:
+                        from datetime import datetime
+                        expiry_dt = datetime.fromisoformat(expiry.replace('Z', '+00:00'))
+                        if expiry_dt < datetime.now(expiry_dt.tzinfo):
+                            st.warning("⚠️ Google Token Expired. It will attempt to refresh on next search.")
+                        else:
+                            st.success("✅ Google APIs Connected")
+                    else:
+                        st.success("✅ Google APIs Connected")
+            except Exception:
+                st.error("❌ Token Corrupted. Needs Re-authentication.")
+        else:
+            st.info("ℹ️ First run? Authenticate by performing any search.")
     else:
-        st.warning("Google APIs Disconnected (credentials.json missing)")
+        st.error("❌ Google APIs Disconnected (credentials.json missing)")
 
 # Search Form
 with st.form("search_form", clear_on_submit=False):

@@ -232,18 +232,36 @@ def fetch_local_files(directory_path, max_files=50):
             except Exception: pass
     return docs
 
+from google.auth.exceptions import RefreshError
+
 def get_google_credentials():
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token: creds.refresh(Request())
-        else:
-            if not os.path.exists('credentials.json'): return None
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
+        try:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                raise RefreshError("No valid credentials or refresh token")
+        except (RefreshError, Exception):
+            if not os.path.exists('credentials.json'): 
+                return None
+            
+            # Local flow - Streamlit Cloud will need st.secrets update
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                creds = flow.run_local_server(port=0, open_browser=False)
+            except Exception as e:
+                print(f"Authentication Error: {e}")
+                return None
+        
+        # Save token
+        if creds:
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+                
     return creds
 
 def fetch_gmail(query_text, max_results=15):
